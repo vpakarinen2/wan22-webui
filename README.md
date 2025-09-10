@@ -1,4 +1,10 @@
-# Wan I2V AND S2V WebUI
+# Wan I2V and S2V WebUI
+
+## Usage
+
+1. Clone the repository
+2. Run the notebook file
+3. Open the WebUI link
 
 ## Screenshots
 
