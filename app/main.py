@@ -2,7 +2,6 @@ import gradio as gr
 
 from app.ui.i2v_tab import build_i2v_tab
 from app.ui.s2v_tab import build_s2v_tab
-from app.config.settings import settings
 
 
 def create_app() -> gr.Blocks:
@@ -19,9 +18,3 @@ def create_app() -> gr.Blocks:
             build_i2v_tab()
             build_s2v_tab()
     return wangd
-
-
-if __name__ == "__main__":
-    app = create_app()
-    app.queue()
-    app.launch(server_name="0.0.0.0", server_port=settings.port, show_error=True)
