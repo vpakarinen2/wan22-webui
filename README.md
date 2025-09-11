@@ -3,7 +3,7 @@
 ## Usage
 
 1. Clone the repository
-2. Run the cells from notebook file
+2. Run the notebook code cells
 3. Open the WebUI link
 
 ## Screenshots
