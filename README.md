@@ -2,9 +2,9 @@
 
 ## Usage
 
-1. Clone repository
-2. Run notebook file
-3. Open WebUI link
+1. Clone the repository
+2. Run the cells from notebook file
+3. Open the WebUI link
 
 ## Screenshots
 
