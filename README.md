@@ -3,7 +3,7 @@
 ## Usage
 
 1. Clone the repository
-2. Run notebook code cells
+2. Run Jupyter notebook file
 3. Open the WebUI link
 
 ## Screenshots
