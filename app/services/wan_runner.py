@@ -42,9 +42,27 @@ def _format_cmd(cmd: list[str]) -> str:
     return " ".join(shlex.quote(c) for c in cmd)
 
 
+def _cli_supports_neg_prompt(generate_py: str) -> tuple[bool, Optional[str]]:
+    """Detect if generate.py supports a negative prompt flag and return the flag name.
+    Checks for common patterns like --negative_prompt or --negative.
+    """
+    try:
+        with open(generate_py, "r", encoding="utf-8", errors="ignore") as f:
+            src = f.read()
+        # Ordered by specificity
+        if "--negative_prompt" in src or "add_argument('--negative_prompt" in src or 'add_argument("--negative_prompt' in src:
+            return True, "--negative_prompt"
+        if "--negative" in src or "add_argument('--negative" in src or 'add_argument("--negative' in src:
+            return True, "--negative"
+    except Exception:
+        pass
+    return False, None
+
+
 def run_i2v(
     image: Optional[str],
     prompt: str,
+    negative_prompt: Optional[str],
     size: str,
     ckpt_dir: str,
     sample_steps: Optional[float] = None,
@@ -92,6 +110,10 @@ def run_i2v(
     ]
     if prompt is not None:
         cmd += ["--prompt", prompt]
+    # Negative prompt support (conditional)
+    neg_supported, neg_flag = _cli_supports_neg_prompt(generate_py)
+    if negative_prompt and neg_supported and neg_flag:
+        cmd += [neg_flag, negative_prompt]
     if sample_steps is not None:
         try:
             cmd += ["--sample_steps", str(int(sample_steps))]
@@ -134,6 +156,8 @@ def run_i2v(
         "[I2V] parameters:",
         f"  image={image}",
         f"  prompt={prompt}",
+        f"  negative_prompt={negative_prompt}",
+        f"  negative_prompt_supported={neg_supported}",
         f"  size={size}",
         f"  ckpt_dir={ckpt_dir}",
         f"  sample_steps={sample_steps}",
@@ -166,6 +190,7 @@ def run_s2v(
     ref_image: Optional[str],
     audio: Optional[str],
     prompt: str,
+    negative_prompt: Optional[str],
     size: str,
     ckpt_dir: str,
     sample_steps: Optional[float] = None,
@@ -220,6 +245,10 @@ def run_s2v(
 
     if prompt is not None:
         cmd += ["--prompt", prompt]
+    # Negative prompt support (conditional)
+    neg_supported, neg_flag = _cli_supports_neg_prompt(generate_py)
+    if negative_prompt and neg_supported and neg_flag:
+        cmd += [neg_flag, negative_prompt]
     if sample_steps is not None:
         try:
             cmd += ["--sample_steps", str(int(sample_steps))]
@@ -261,6 +290,8 @@ def run_s2v(
         f"  ref_image={ref_image}",
         f"  audio={audio}",
         f"  prompt={prompt}",
+        f"  negative_prompt={negative_prompt}",
+        f"  negative_prompt_supported={neg_supported}",
         f"  size={size}",
         f"  ckpt_dir={ckpt_dir}",
         f"  sample_steps={sample_steps}",
