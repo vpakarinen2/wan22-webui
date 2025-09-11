@@ -12,7 +12,6 @@ def build_i2v_tab() -> None:
             input_image = gr.Image(label="Reference Image", type="filepath")
             with gr.Column():
                 prompt = gr.Textbox(label="Prompt (optional)")
-                negative_prompt = gr.Textbox(label="Negative Prompt (optional)")
                 size = gr.Dropdown(
                     label="Resolution",
                     choices=[
@@ -98,11 +97,10 @@ def build_i2v_tab() -> None:
             s = int(total_s % 60)
             return f"Estimated time: ~ {m}m {s:02d}s"
 
-        def on_run(image: str, text_prompt: str, neg_prompt: str, area: str, ckpt: str, steps: float, solver: str, frames: float, _offload: bool, _t5cpu: bool, _prefer_flash: bool):
+        def on_run(image: str, text_prompt: str, area: str, ckpt: str, steps: float, solver: str, frames: float, _offload: bool, _t5cpu: bool, _prefer_flash: bool):
             return run_i2v(
                 image=image,
                 prompt=text_prompt,
-                negative_prompt=neg_prompt,
                 size=area,
                 ckpt_dir=ckpt,
                 sample_steps=steps,
@@ -113,7 +111,7 @@ def build_i2v_tab() -> None:
                 prefer_flash_attn=_prefer_flash,
             )
 
-        run_btn.click(on_run, [input_image, prompt, negative_prompt, size, ckpt_dir, sample_steps, sample_solver, frame_num, offload_model, t5_cpu, prefer_flash], [output_video, logs])
+        run_btn.click(on_run, [input_image, prompt, size, ckpt_dir, sample_steps, sample_solver, frame_num, offload_model, t5_cpu, prefer_flash], [output_video, logs])
         cancel_btn.click(lambda: cancel_current(), outputs=logs)
 
         for comp in (sample_steps, frame_num, size, offload_model, t5_cpu, prefer_flash):

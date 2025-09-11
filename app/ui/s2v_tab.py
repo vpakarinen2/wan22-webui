@@ -13,7 +13,6 @@ def build_s2v_tab() -> None:
             audio = gr.Audio(label="Audio (upload or record)", type="filepath")
         with gr.Row():
             prompt = gr.Textbox(label="Prompt (optional)")
-            negative_prompt = gr.Textbox(label="Negative Prompt (optional)")
             size = gr.Dropdown(
                 label="Resolution",
                 choices=[
@@ -101,7 +100,6 @@ def build_s2v_tab() -> None:
             _ref_image: str,
             _audio: str,
             _prompt: str,
-            _neg_prompt: str,
             _size: str,
             _ckpt_dir: str,
             _sample_steps: float,
@@ -115,7 +113,6 @@ def build_s2v_tab() -> None:
                 ref_image=_ref_image,
                 audio=_audio,
                 prompt=_prompt,
-                negative_prompt=_neg_prompt,
                 size=_size,
                 ckpt_dir=_ckpt_dir,
                 sample_steps=_sample_steps,
@@ -128,7 +125,7 @@ def build_s2v_tab() -> None:
 
         run_btn.click(
             on_run,
-            [ref_image, audio, prompt, negative_prompt, size, ckpt_dir, sample_steps, sample_solver, frame_num, offload_model, t5_cpu, prefer_flash],
+            [ref_image, audio, prompt, size, ckpt_dir, sample_steps, sample_solver, frame_num, offload_model, t5_cpu, prefer_flash],
             [output_video, logs],
         )
         cancel_btn.click(lambda: cancel_current(), outputs=logs)
