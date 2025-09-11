@@ -28,6 +28,93 @@ def _validate_ckpt_dir(ckpt_dir: str) -> Optional[str]:
     return None
 
 
+def _parse_size_str(area: str) -> tuple[Optional[int], Optional[int]]:
+    try:
+        w, h = area.split("*")
+        return int(w), int(h)
+    except Exception:
+        return None, None
+
+
+def _rescale_video(in_path: str, out_path: str, w: int, h: int) -> tuple[bool, str]:
+    """Rescale video to WxH, preferring ffmpeg; fallback to OpenCV (drops audio).
+    Returns (ok, backend) where backend in {"ffmpeg","opencv",""}.
+    """
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                in_path,
+                "-vf",
+                f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}",
+                "-c:v",
+                "libx264",
+                "-crf",
+                "18",
+                "-preset",
+                "veryfast",
+                "-pix_fmt",
+                "yuv420p",
+                out_path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=120,
+        )
+        if proc.returncode == 0 and os.path.exists(out_path):
+            return True, "ffmpeg"
+    except Exception:
+        pass
+    try:
+        import cv2
+        import numpy as np
+
+        cap = cv2.VideoCapture(in_path)
+        if not cap.isOpened():
+            return False, ""
+        fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(out_path, fourcc, fps, (w, h))
+        ok_any = False
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            ih, iw = frame.shape[:2]
+            if iw <= 0 or ih <= 0:
+                out_frame = frame
+            else:
+                scale = max(w / float(iw), h / float(ih))
+                new_w = max(1, int(round(iw * scale)))
+                new_h = max(1, int(round(ih * scale)))
+                try:
+                    resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                except Exception:
+                    resized = frame
+                x_off = max(0, (new_w - w) // 2)
+                y_off = max(0, (new_h - h) // 2)
+                out_frame = resized[y_off:y_off + h, x_off:x_off + w]
+                if out_frame.shape[0] != h or out_frame.shape[1] != w:
+                    canvas = np.zeros((h, w, 3), dtype=resized.dtype)
+                    hh, ww = out_frame.shape[:2]
+                    y0 = max(0, (h - hh) // 2)
+                    x0 = max(0, (w - ww) // 2)
+                    canvas[y0:y0 + hh, x0:x0 + ww] = out_frame
+                    out_frame = canvas
+            writer.write(out_frame)
+            ok_any = True
+        cap.release()
+        writer.release()
+        if ok_any and os.path.exists(out_path):
+            return True, "opencv"
+    except Exception:
+        pass
+    return False, ""
+
+
 def _validate_generate_py(generate_py: str) -> Optional[str]:
     if not os.path.isfile(generate_py):
         return (
@@ -42,27 +129,58 @@ def _format_cmd(cmd: list[str]) -> str:
     return " ".join(shlex.quote(c) for c in cmd)
 
 
-def _cli_supports_neg_prompt(generate_py: str) -> tuple[bool, Optional[str]]:
-    """Detect if generate.py supports a negative prompt flag and return the flag name.
-    Checks for common patterns like --negative_prompt or --negative.
+def _probe_video_resolution(video_path: str) -> Optional[tuple[int, int]]:
+    """Try to get (width,height) for an mp4 using ffprobe or OpenCV.
+    Returns None if neither method is available.
     """
     try:
-        with open(generate_py, "r", encoding="utf-8", errors="ignore") as f:
-            src = f.read()
-        # Ordered by specificity
-        if "--negative_prompt" in src or "add_argument('--negative_prompt" in src or 'add_argument("--negative_prompt' in src:
-            return True, "--negative_prompt"
-        if "--negative" in src or "add_argument('--negative" in src or 'add_argument("--negative' in src:
-            return True, "--negative"
+        proc = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "csv=s=x:p=0",
+                video_path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            out = proc.stdout.strip()
+            if "x" in out:
+                w, h = out.split("x", 1)
+                return int(w), int(h)
     except Exception:
         pass
-    return False, None
+    try:
+        import cv2
+
+        cap = cv2.VideoCapture(video_path)
+        if cap.isOpened():
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            cap.release()
+            if w > 0 and h > 0:
+                return w, h
+        try:
+            cap.release()
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return None
 
 
 def run_i2v(
     image: Optional[str],
     prompt: str,
-    negative_prompt: Optional[str],
     size: str,
     ckpt_dir: str,
     sample_steps: Optional[float] = None,
@@ -71,6 +189,7 @@ def run_i2v(
     offload_model: Optional[bool] = None,
     t5_cpu: bool = False,
     prefer_flash_attn: Optional[bool] = None,
+    force_output_rescale: bool = True,
 ) -> tuple[Optional[str], str]:
     """Prepare I2V command and return."""
     errs = []
@@ -110,10 +229,6 @@ def run_i2v(
     ]
     if prompt is not None:
         cmd += ["--prompt", prompt]
-    # Negative prompt support (conditional)
-    neg_supported, neg_flag = _cli_supports_neg_prompt(generate_py)
-    if negative_prompt and neg_supported and neg_flag:
-        cmd += [neg_flag, negative_prompt]
     if sample_steps is not None:
         try:
             cmd += ["--sample_steps", str(int(sample_steps))]
@@ -132,8 +247,6 @@ def run_i2v(
         cmd += ["--offload_model", "True" if offload_model else "False"]
     if t5_cpu:
         cmd += ["--t5_cpu"]
-
-    # LoRA removed for now (no flags added)
 
     if not settings.execute_enabled:
         return None, (
@@ -156,8 +269,6 @@ def run_i2v(
         "[I2V] parameters:",
         f"  image={image}",
         f"  prompt={prompt}",
-        f"  negative_prompt={negative_prompt}",
-        f"  negative_prompt_supported={neg_supported}",
         f"  size={size}",
         f"  ckpt_dir={ckpt_dir}",
         f"  sample_steps={sample_steps}",
@@ -166,8 +277,10 @@ def run_i2v(
         f"  offload_model={offload_model}",
         f"  t5_cpu={t5_cpu}",
         f"  prefer_flash_attn={prefer_flash_attn}",
+        f"  force_output_rescale={force_output_rescale}",
         f"  env: WAN_FORCE_FLASH_ATTENTION={env.get('WAN_FORCE_FLASH_ATTENTION')}, WAN_FORCE_NO_FLASH_ATTENTION={env.get('WAN_FORCE_NO_FLASH_ATTENTION')}",
         f"  cwd={os.path.dirname(generate_py)}",
+        f"  command:\n{_format_cmd(cmd)}",
         "",
     ]
     video_path, logs = _execute(cmd, cwd=os.path.dirname(generate_py), env=env)
@@ -181,6 +294,24 @@ def run_i2v(
         if video_path and os.path.exists(video_path):
             if os.path.exists(save_path) and os.path.normpath(video_path) != os.path.normpath(save_path):
                 os.remove(save_path)
+        if video_path and os.path.exists(video_path):
+            res = _probe_video_resolution(video_path)
+            if res:
+                logs = f"{logs}\n[Output] actual_resolution={res[0]}*{res[1]}"
+            target_w, target_h = _parse_size_str(size)
+            if force_output_rescale and target_w and target_h:
+                tmp_out = save_path + ".rescaled.mp4"
+                ok, backend = _rescale_video(video_path, tmp_out, target_w, target_h)
+                if ok and os.path.exists(tmp_out):
+                    try:
+                        os.replace(tmp_out, save_path)
+                        video_path = save_path
+                        logs = f"{logs}\n[Output] rescaled_to={target_w}*{target_h} via {backend}"
+                    except Exception:
+                        try:
+                            os.remove(tmp_out)
+                        except Exception:
+                            pass
     except Exception:
         pass
     return video_path, logs
@@ -190,7 +321,6 @@ def run_s2v(
     ref_image: Optional[str],
     audio: Optional[str],
     prompt: str,
-    negative_prompt: Optional[str],
     size: str,
     ckpt_dir: str,
     sample_steps: Optional[float] = None,
@@ -199,6 +329,7 @@ def run_s2v(
     offload_model: Optional[bool] = None,
     t5_cpu: bool = False,
     prefer_flash_attn: Optional[bool] = None,
+    force_output_rescale: bool = True,
 ) -> tuple[Optional[str], str]:
     """Prepare S2V command and return (video_path, logs). No execution yet."""
     errs = []
@@ -245,10 +376,6 @@ def run_s2v(
 
     if prompt is not None:
         cmd += ["--prompt", prompt]
-    # Negative prompt support (conditional)
-    neg_supported, neg_flag = _cli_supports_neg_prompt(generate_py)
-    if negative_prompt and neg_supported and neg_flag:
-        cmd += [neg_flag, negative_prompt]
     if sample_steps is not None:
         try:
             cmd += ["--sample_steps", str(int(sample_steps))]
@@ -290,8 +417,6 @@ def run_s2v(
         f"  ref_image={ref_image}",
         f"  audio={audio}",
         f"  prompt={prompt}",
-        f"  negative_prompt={negative_prompt}",
-        f"  negative_prompt_supported={neg_supported}",
         f"  size={size}",
         f"  ckpt_dir={ckpt_dir}",
         f"  sample_steps={sample_steps}",
@@ -300,8 +425,10 @@ def run_s2v(
         f"  offload_model={offload_model}",
         f"  t5_cpu={t5_cpu}",
         f"  prefer_flash_attn={prefer_flash_attn}",
+        f"  force_output_rescale={force_output_rescale}",
         f"  env: WAN_FORCE_FLASH_ATTENTION={env.get('WAN_FORCE_FLASH_ATTENTION')}, WAN_FORCE_NO_FLASH_ATTENTION={env.get('WAN_FORCE_NO_FLASH_ATTENTION')}",
         f"  cwd={os.path.dirname(generate_py)}",
+        f"  command:\n{_format_cmd(cmd)}",
         "",
     ]
     video_path, logs = _execute(cmd, cwd=os.path.dirname(generate_py), env=env)
@@ -315,6 +442,24 @@ def run_s2v(
         if video_path and os.path.exists(video_path):
             if os.path.exists(save_path) and os.path.normpath(video_path) != os.path.normpath(save_path):
                 os.remove(save_path)
+        if video_path and os.path.exists(video_path):
+            res = _probe_video_resolution(video_path)
+            if res:
+                logs = f"{logs}\n[Output] actual_resolution={res[0]}*{res[1]}"
+            target_w, target_h = _parse_size_str(size)
+            if force_output_rescale and target_w and target_h:
+                tmp_out = save_path + ".rescaled.mp4"
+                ok, backend = _rescale_video(video_path, tmp_out, target_w, target_h)
+                if ok and os.path.exists(tmp_out):
+                    try:
+                        os.replace(tmp_out, save_path)
+                        video_path = save_path
+                        logs = f"{logs}\n[Output] rescaled_to={target_w}*{target_h} via {backend}"
+                    except Exception:
+                        try:
+                            os.remove(tmp_out)
+                        except Exception:
+                            pass
     except Exception:
         pass
     return video_path, logs
