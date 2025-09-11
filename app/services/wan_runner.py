@@ -37,9 +37,7 @@ def _parse_size_str(area: str) -> tuple[Optional[int], Optional[int]]:
 
 
 def _rescale_video(in_path: str, out_path: str, w: int, h: int) -> tuple[bool, str]:
-    """Rescale video to WxH, preferring ffmpeg; fallback to OpenCV (drops audio).
-    Returns (ok, backend) where backend in {"ffmpeg","opencv",""}.
-    """
+    """Rescale video to WxH."""
     try:
         proc = subprocess.run(
             [
@@ -130,9 +128,7 @@ def _format_cmd(cmd: list[str]) -> str:
 
 
 def _probe_video_resolution(video_path: str) -> Optional[tuple[int, int]]:
-    """Try to get (width,height) for an mp4 using ffprobe or OpenCV.
-    Returns None if neither method is available.
-    """
+    """Try to get (width,height) for an mp4 using ffprobe."""
     try:
         proc = subprocess.run(
             [
@@ -469,7 +465,7 @@ _CURRENT_PROC: Optional[subprocess.Popen] = None
 
 
 def cancel_current() -> str:
-    """Attempt to terminate the running process (if any)."""
+    """Attempt to terminate the running process."""
     global _CURRENT_PROC
     with _CURRENT_PROC_LOCK:
         if _CURRENT_PROC is None:
