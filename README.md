@@ -1,10 +1,8 @@
 # Wan I2V and S2V WebUI
 
 ## Usage
-
-1. Clone the repository
-2. Run Jupyter notebook file
-3. Open the WebUI link
+1. Run Jupyter notebook file
+2. Open the WebUI link
 
 ## Screenshots
 
