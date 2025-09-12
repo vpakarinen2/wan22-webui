@@ -2,7 +2,7 @@
 
 ## Usage
 1. Run Jupyter notebook file
-2. Open the WebUI link
+2. Open WebUI link
 
 ## Screenshots
 
