@@ -1,4 +1,4 @@
-# Wan 2.2 WebUI (I2V + S2V + Fun Control)
+# Wan 2.2 WebUI (I2V + S2V)
 
 ## Usage
 1. Run Jupyter notebook file
