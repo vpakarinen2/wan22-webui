@@ -55,6 +55,23 @@ def build_fun_tab() -> None:
                 pose_hand = gr.Checkbox(label="Pose: Detect Hands", value=True)
                 pose_face = gr.Checkbox(label="Pose: Detect Face", value=False)
 
+        with gr.Accordion("Control Video (Optional)", open=False):
+            with gr.Row():
+                control_video = gr.Video(label="Control Video (optional)", sources=["upload"], include_audio=False)
+                control_video.type = "filepath"
+            with gr.Row():
+                control_source = gr.Dropdown(
+                    label="Control Source",
+                    choices=[
+                        "precomputed",
+                        "rgb->canny",
+                        "rgb->pose",
+                        "rgb->depth",
+                    ],
+                    value="rgb->canny",
+                    info="How to derive the control from the uploaded video frames.",
+                )
+
         with gr.Accordion("Advanced (Sampling)", open=False):
             with gr.Row():
                 sample_steps = gr.Slider(
@@ -74,7 +91,30 @@ def build_fun_tab() -> None:
                 sample_solver = gr.Dropdown(
                     label="Sampler",
                     choices=["fm-euler", "unipc", "dpm"],
-                    value="fm-euler",
+                    value="unipc",
+                )
+            with gr.Row():
+                fps = gr.Slider(
+                    label="Output FPS",
+                    minimum=8,
+                    maximum=30,
+                    step=1,
+                    value=16,
+                    info="Frames per second of the written MP4 (e.g., 81 frames at 16 fps ≈ 5.06s)",
+                )
+                use_inpaint = gr.Checkbox(
+                    label="Use Ref Image (Inpaint)",
+                    value=False,
+                    info="Keeps more of the input image (less motion).",
+                )
+            with gr.Row():
+                guidance_scale = gr.Slider(
+                    label="Guidance Scale",
+                    minimum=0.0,
+                    maximum=12.0,
+                    step=0.1,
+                    value=6.0,
+                    info="Classifier-free guidance.",
                 )
 
         with gr.Row():
@@ -119,6 +159,11 @@ def build_fun_tab() -> None:
             steps: float,
             frames: float,
             solver: str,
+            gscale: float,
+            _use_inpaint: bool,
+            out_fps: float,
+            ctrl_video_path: str | None,
+            ctrl_source: str,
         ):
             return run_fun_control(
                 image_path=image,
@@ -133,6 +178,11 @@ def build_fun_tab() -> None:
                 sample_steps=int(steps),
                 frame_num=int(frames),
                 sample_solver=solver,
+                guidance_scale=float(gscale),
+                use_inpaint=bool(_use_inpaint),
+                fps=int(out_fps),
+                control_video_path=ctrl_video_path,
+                control_source=ctrl_source,
             )
 
         run_btn.click(
@@ -150,6 +200,11 @@ def build_fun_tab() -> None:
                 sample_steps,
                 frame_num,
                 sample_solver,
+                guidance_scale,
+                use_inpaint,
+                fps,
+                control_video,
+                control_source,
             ],
             [output_video, logs],
         )
