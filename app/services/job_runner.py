@@ -7,9 +7,9 @@ from typing import Optional
 @dataclass
 class Job:
     id: str
-    task: str  # i2v | s2v
+    task: str
     args: list[str]
-    status: str = "queued"  # queued | running | done | error | canceled
+    status: str = "queued"
     output_path: Optional[str] = None
     log_path: Optional[str] = None
     error: Optional[str] = None
