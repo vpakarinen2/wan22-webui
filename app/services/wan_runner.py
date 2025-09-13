@@ -276,7 +276,6 @@ def run_i2v(
         f"  force_output_rescale={force_output_rescale}",
         f"  env: WAN_FORCE_FLASH_ATTENTION={env.get('WAN_FORCE_FLASH_ATTENTION')}, WAN_FORCE_NO_FLASH_ATTENTION={env.get('WAN_FORCE_NO_FLASH_ATTENTION')}",
         f"  cwd={os.path.dirname(generate_py)}",
-        f"  command:\n{_format_cmd(cmd)}",
         "",
     ]
     video_path, logs = _execute(cmd, cwd=os.path.dirname(generate_py), env=env)
@@ -424,7 +423,6 @@ def run_s2v(
         f"  force_output_rescale={force_output_rescale}",
         f"  env: WAN_FORCE_FLASH_ATTENTION={env.get('WAN_FORCE_FLASH_ATTENTION')}, WAN_FORCE_NO_FLASH_ATTENTION={env.get('WAN_FORCE_NO_FLASH_ATTENTION')}",
         f"  cwd={os.path.dirname(generate_py)}",
-        f"  command:\n{_format_cmd(cmd)}",
         "",
     ]
     video_path, logs = _execute(cmd, cwd=os.path.dirname(generate_py), env=env)
