@@ -2,7 +2,6 @@ import gradio as gr
 
 from app.ui.i2v_tab import build_i2v_tab
 from app.ui.s2v_tab import build_s2v_tab
-#from app.ui.fun_tab import build_fun_tab
 
 
 def create_app() -> gr.Blocks:
