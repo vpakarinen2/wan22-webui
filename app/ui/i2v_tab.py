@@ -48,6 +48,22 @@ def build_i2v_tab() -> None:
                     choices=["unipc", "dpm++"],
                     value="unipc",
                 )
+            with gr.Row():
+                out_fps = gr.Slider(
+                    label="Output FPS",
+                    minimum=8,
+                    maximum=30,
+                    step=1,
+                    value=16,
+                    info="Frames per second for the output video.",
+                )
+                seed = gr.Number(
+                    label="Seed",
+                    value=0,
+                    precision=0,
+                    info="Use 0 for random seed.",
+                )
+                randomize_seed = gr.Checkbox(label="Randomize Seed", value=True)
         with gr.Accordion("Performance", open=False):
             with gr.Row():
                 offload_model = gr.Checkbox(
@@ -97,7 +113,15 @@ def build_i2v_tab() -> None:
             s = int(total_s % 60)
             return f"Estimated time: ~ {m}m {s:02d}s"
 
-        def on_run(image: str, text_prompt: str, area: str, ckpt: str, steps: float, solver: str, frames: float, _offload: bool, _t5cpu: bool, _prefer_flash: bool):
+        def on_run(image: str, text_prompt: str, area: str, ckpt: str, steps: float, solver: str, frames: float, _offload: bool, _t5cpu: bool, _prefer_flash: bool, _out_fps: float, _randomize: bool, _seed: float):
+            if _randomize:
+                seed_arg = None
+            else:
+                try:
+                    seed_val = int(_seed)
+                except Exception:
+                    seed_val = 0
+                seed_arg = None if seed_val is None or seed_val == 0 else seed_val
             return run_i2v(
                 image=image,
                 prompt=text_prompt,
@@ -109,9 +133,18 @@ def build_i2v_tab() -> None:
                 offload_model=_offload,
                 t5_cpu=_t5cpu,
                 prefer_flash_attn=_prefer_flash,
+                out_fps=int(_out_fps),
+                seed=seed_arg,
             )
 
-        run_btn.click(on_run, [input_image, prompt, size, ckpt_dir, sample_steps, sample_solver, frame_num, offload_model, t5_cpu, prefer_flash], [output_video, logs])
+        run_btn.click(on_run, [input_image, prompt, size, ckpt_dir, sample_steps, sample_solver, frame_num, offload_model, t5_cpu, prefer_flash, out_fps, randomize_seed, seed], [output_video, logs])
+
+        def _toggle_seed(r: bool):
+            if r:
+                return gr.update(interactive=False, value=0)
+            return gr.update(interactive=True)
+
+        randomize_seed.change(_toggle_seed, inputs=randomize_seed, outputs=seed)
         cancel_btn.click(lambda: cancel_current(), outputs=logs)
 
         for comp in (sample_steps, frame_num, size, offload_model, t5_cpu, prefer_flash):
