@@ -28,6 +28,170 @@ def _validate_ckpt_dir(ckpt_dir: str) -> Optional[str]:
     return None
 
 
+def _probe_video_duration(video_path: str) -> Optional[float]:
+    """Try to get duration (seconds) using ffprobe or OpenCV fallback."""
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                video_path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            try:
+                return float(proc.stdout.strip())
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
+        import cv2
+        cap = cv2.VideoCapture(video_path)
+        if cap.isOpened():
+            fps = cap.get(cv2.CAP_PROP_FPS) or 0
+            frames = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+            cap.release()
+            if fps > 0 and frames > 0:
+                return float(frames / fps)
+        try:
+            cap.release()
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return None
+
+
+def _probe_video_fps(video_path: str) -> Optional[float]:
+    """Try to get FPS using ffprobe or OpenCV."""
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=avg_frame_rate",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                video_path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            val = proc.stdout.strip()
+            if "/" in val:
+                try:
+                    num, den = val.split("/", 1)
+                    num = float(num)
+                    den = float(den)
+                    if den != 0:
+                        return num / den
+                except Exception:
+                    pass
+            else:
+                try:
+                    return float(val)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    try:
+        import cv2
+        cap = cv2.VideoCapture(video_path)
+        if cap.isOpened():
+            fps = cap.get(cv2.CAP_PROP_FPS) or 0
+            cap.release()
+            if fps > 0:
+                return float(fps)
+        try:
+            cap.release()
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return None
+
+
+def _remux_set_fps(in_path: str, out_path: str, fps: int) -> tuple[bool, str]:
+    """Re-encode video to a target FPS using ffmpeg, fallback to OpenCV."""
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                in_path,
+                "-r",
+                str(int(fps)),
+                "-c:v",
+                "libx264",
+                "-crf",
+                "18",
+                "-preset",
+                "veryfast",
+                "-pix_fmt",
+                "yuv420p",
+                out_path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=120,
+        )
+        if proc.returncode == 0 and os.path.exists(out_path):
+            return True, "ffmpeg"
+    except Exception:
+        pass
+    try:
+        import cv2
+        import numpy as np
+        cap = cv2.VideoCapture(in_path)
+        if not cap.isOpened():
+            return False, ""
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 0
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 0
+        if w <= 0 or h <= 0:
+            # derive from first frame
+            ret, fr = cap.read()
+            if not ret:
+                cap.release()
+                return False, ""
+            h, w = fr.shape[:2]
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(out_path, fourcc, float(fps), (w, h))
+        ok_any = False
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            writer.write(frame)
+            ok_any = True
+        cap.release()
+        writer.release()
+        if ok_any and os.path.exists(out_path):
+            return True, "opencv"
+    except Exception:
+        pass
+    return False, ""
+
+
 def _parse_size_str(area: str) -> tuple[Optional[int], Optional[int]]:
     try:
         w, h = area.split("*")
@@ -186,6 +350,8 @@ def run_i2v(
     t5_cpu: bool = False,
     prefer_flash_attn: Optional[bool] = None,
     force_output_rescale: bool = True,
+    seed: Optional[int] = None,
+    out_fps: Optional[float] = None,
 ) -> tuple[Optional[str], str]:
     """Prepare I2V command and return."""
     errs = []
@@ -239,6 +405,11 @@ def run_i2v(
             cmd += ["--infer_frames", nframes]
         except Exception:
             pass
+    if seed is not None:
+        try:
+            cmd += ["--seed", str(int(seed))]
+        except Exception:
+            pass
     if offload_model is not None:
         cmd += ["--offload_model", "True" if offload_model else "False"]
     if t5_cpu:
@@ -274,6 +445,8 @@ def run_i2v(
         f"  t5_cpu={t5_cpu}",
         f"  prefer_flash_attn={prefer_flash_attn}",
         f"  force_output_rescale={force_output_rescale}",
+        f"  seed={seed}",
+        f"  out_fps={out_fps}",
         f"  env: WAN_FORCE_FLASH_ATTENTION={env.get('WAN_FORCE_FLASH_ATTENTION')}, WAN_FORCE_NO_FLASH_ATTENTION={env.get('WAN_FORCE_NO_FLASH_ATTENTION')}",
         f"  cwd={os.path.dirname(generate_py)}",
         "",
@@ -290,9 +463,7 @@ def run_i2v(
             if os.path.exists(save_path) and os.path.normpath(video_path) != os.path.normpath(save_path):
                 os.remove(save_path)
         if video_path and os.path.exists(video_path):
-            res = _probe_video_resolution(video_path)
-            if res:
-                logs = f"{logs}\n[Output] actual_resolution={res[0]}*{res[1]}"
+            # Optional rescale
             target_w, target_h = _parse_size_str(size)
             if force_output_rescale and target_w and target_h:
                 tmp_out = save_path + ".rescaled.mp4"
@@ -307,6 +478,34 @@ def run_i2v(
                             os.remove(tmp_out)
                         except Exception:
                             pass
+            if out_fps is not None and out_fps > 0:
+                tmp_out = save_path + ".fps.mp4"
+                ok, backend = _remux_set_fps(video_path, tmp_out, int(out_fps))
+                if ok and os.path.exists(tmp_out):
+                    try:
+                        os.replace(tmp_out, save_path)
+                        video_path = save_path
+                        logs = f"{logs}\n[Output] set_fps={int(out_fps)} via {backend}"
+                    except Exception:
+                        try:
+                            os.remove(tmp_out)
+                        except Exception:
+                            pass
+            res = _probe_video_resolution(video_path)
+            dur = _probe_video_duration(video_path)
+            fpsv = _probe_video_fps(video_path)
+            if res:
+                logs = f"{logs}\n[Output] actual_resolution={res[0]}*{res[1]}"
+            if dur is not None:
+                logs = f"{logs}\n[Output] duration_s={dur:.2f}"
+            if fpsv is not None:
+                logs = f"{logs}\n[Output] actual_fps={fpsv:.3f}"
+            try:
+                base_txt = os.path.splitext(save_path)[0] + ".txt"
+                with open(base_txt, "w", encoding="utf-8") as f:
+                    f.write("\n".join(diag) + logs)
+            except Exception:
+                pass
     except Exception:
         pass
     return video_path, logs
@@ -325,6 +524,8 @@ def run_s2v(
     t5_cpu: bool = False,
     prefer_flash_attn: Optional[bool] = None,
     force_output_rescale: bool = True,
+    seed: Optional[int] = None,
+    out_fps: Optional[float] = None,
 ) -> tuple[Optional[str], str]:
     """Prepare S2V command and return (video_path, logs). No execution yet."""
     errs = []
@@ -421,6 +622,8 @@ def run_s2v(
         f"  t5_cpu={t5_cpu}",
         f"  prefer_flash_attn={prefer_flash_attn}",
         f"  force_output_rescale={force_output_rescale}",
+        f"  seed={seed}",
+        f"  out_fps={out_fps}",
         f"  env: WAN_FORCE_FLASH_ATTENTION={env.get('WAN_FORCE_FLASH_ATTENTION')}, WAN_FORCE_NO_FLASH_ATTENTION={env.get('WAN_FORCE_NO_FLASH_ATTENTION')}",
         f"  cwd={os.path.dirname(generate_py)}",
         "",
@@ -454,6 +657,31 @@ def run_s2v(
                             os.remove(tmp_out)
                         except Exception:
                             pass
+            if out_fps is not None and out_fps > 0:
+                tmp_out = save_path + ".fps.mp4"
+                ok, backend = _remux_set_fps(video_path, tmp_out, int(out_fps))
+                if ok and os.path.exists(tmp_out):
+                    try:
+                        os.replace(tmp_out, save_path)
+                        video_path = save_path
+                        logs = f"{logs}\n[Output] set_fps={int(out_fps)} via {backend}"
+                    except Exception:
+                        try:
+                            os.remove(tmp_out)
+                        except Exception:
+                            pass
+            dur = _probe_video_duration(video_path)
+            fpsv = _probe_video_fps(video_path)
+            if dur is not None:
+                logs = f"{logs}\n[Output] duration_s={dur:.2f}"
+            if fpsv is not None:
+                logs = f"{logs}\n[Output] actual_fps={fpsv:.3f}"
+            try:
+                base_txt = os.path.splitext(save_path)[0] + ".txt"
+                with open(base_txt, "w", encoding="utf-8") as f:
+                    f.write("\n".join(diag) + logs)
+            except Exception:
+                pass
     except Exception:
         pass
     return video_path, logs
