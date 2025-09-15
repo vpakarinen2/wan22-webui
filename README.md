@@ -4,7 +4,7 @@ Gradio WebUI for Wan2.2 Image-to-Video (I2V) and Sound-to-Video (S2V).
 
 ## Usage
 1. Clone the repository
-1. Run notebook file
+1. Run Jupyter notebook file
 2. Open the WebUI link
 
 ## Requirements
