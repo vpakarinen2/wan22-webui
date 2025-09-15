@@ -1,6 +1,6 @@
 # Wan 2.2 WebUI (I2V + S2V)
 
-Gradio WebUI for Wan2.2 Image-to-Video (I2V) and Sound-to-Video (S2V).
+WebUI for Wan2.2 Image-to-Video (I2V) and Sound-to-Video (S2V).
 
 ## Usage
 1. Clone the repository
