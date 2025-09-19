@@ -12,7 +12,7 @@ WebUI for Wan2.2 Image-to-Video (I2V) and Sound-to-Video (S2V).
 - FFmpeg (ffmpeg/ffprobe)
 - CUDA GPU recommended (A100/H100)
 
-## Template (Runpod)
+## Runpod (Recommended)
 
 - Template: Runpod Pytorch 2.4.0
 - Image: `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04`
