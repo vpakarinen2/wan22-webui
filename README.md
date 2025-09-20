@@ -7,11 +7,6 @@ WebUI for Wan2.2 Image-to-Video (I2V) and Sound-to-Video (S2V).
 1. Run Jupyter notebook file
 2. Open the WebUI link
 
-## Requirements
-- Python 3.10 or 3.11
-- FFmpeg (ffmpeg/ffprobe)
-- CUDA GPU recommended (A100/H100)
-
 ## Runpod (Recommended)
 
 - Template: Runpod Pytorch 2.4.0
